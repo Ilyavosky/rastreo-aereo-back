@@ -30,8 +30,8 @@ def _unique(ids: list[int]) -> list[int]:
     return list(dict.fromkeys(ids))
 
 
-def _check_limit(name: str, value: int, limit: int) -> None:
-    if value > limit:
+def _check_limit(name: str, value: int, limit: int | None) -> None:
+    if limit is not None and value > limit:
         raise _fail(f"{name} no puede ser mayor que {limit}")
 
 

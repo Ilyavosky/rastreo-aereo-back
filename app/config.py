@@ -8,11 +8,12 @@ class Settings(BaseSettings):
     cors_origins: list[str]
 
     max_concurrent_runs: int = 2
+    stream_poll_s: float = 1.0
 
     limit_max_drones: int = 10
     limit_max_points: int = 30
-    limit_max_population: int = 500
-    limit_max_generations: int = 2000
+    limit_max_population: int | None = None
+    limit_max_generations: int | None = None
     limit_max_grid_cells: int = 40000
 
     default_n_drones: int = 3
