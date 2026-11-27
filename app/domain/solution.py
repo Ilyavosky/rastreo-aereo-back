@@ -4,7 +4,7 @@ from app.domain.simulator import Evaluator, Metrics
 
 
 def describe_solution(evaluator: Evaluator, x: np.ndarray) -> tuple[Metrics, dict]:
-    metrics = evaluator.evaluate(x)
+    metrics = evaluator.evaluate(x, record=True)
     layout = evaluator.layout
     P, V, td, tc = layout.split(x)
     P, V, td, tc = P[0], V[0], td[0], tc[0]
@@ -31,6 +31,18 @@ def describe_solution(evaluator: Evaluator, x: np.ndarray) -> tuple[Metrics, dic
                 "camera_energy_wh": report.camera_energy_wh,
                 "battery_remaining_pct": report.battery_remaining_pct,
                 "distance_m": report.distance_m,
+                "avg_speed_ms": report.avg_speed_ms,
+                "range_m": report.range_m,
+                "legs": [
+                    {
+                        "seq": leg["seq"],
+                        "kind": leg["kind"],
+                        "distance_m": leg["distance_m"],
+                        "speed_ms": leg["speed_cruise_ms"],
+                        "duration_s": leg["t_end_s"] - leg["t_start_s"],
+                    }
+                    for leg in report.legs
+                ],
             }
         )
     base = evaluator.terrain.base

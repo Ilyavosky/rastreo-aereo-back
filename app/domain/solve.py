@@ -1,3 +1,4 @@
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -23,6 +24,12 @@ class GenerationStats:
     best_t_mission_min: float | None
     best_e_total_wh: float | None
     hypervolume: float | None
+    evaluations: int = 0
+    elapsed_s: float = 0.0
+    n_front: int = 0
+    mean_r_de: float | None = None
+    mean_t_mission_min: float | None = None
+    mean_e_total_wh: float | None = None
 
 
 @dataclass
@@ -73,10 +80,11 @@ def optimize(
         verbose=False,
     )
     tracker = HypervolumeTracker()
+    started = time.perf_counter()
     while algorithm.has_next():
         algorithm.next()
         if on_generation is not None:
-            on_generation(_stats(algorithm, tracker))
+            on_generation(_stats(algorithm, tracker, time.perf_counter() - started))
         if should_stop is not None and should_stop():
             return None
     optimum = algorithm.opt
@@ -89,17 +97,26 @@ def optimize(
     )
 
 
-def _stats(algorithm, tracker: HypervolumeTracker) -> GenerationStats:
+def _stats(algorithm, tracker: HypervolumeTracker, elapsed_s: float) -> GenerationStats:
     pop = algorithm.pop
+    gen = algorithm.n_gen - 1
+    evaluations = int(algorithm.evaluator.n_eval)
     feasible = pop.get("FEAS")[:, 0]
     F = pop.get("F")[feasible]
     if len(F) == 0:
-        return GenerationStats(algorithm.n_gen - 1, 0, None, None, None, None)
+        return GenerationStats(gen, 0, None, None, None, None, evaluations, elapsed_s, 0)
+    rank = pop.get("rank")[feasible]
     return GenerationStats(
-        gen=algorithm.n_gen - 1,
+        gen=gen,
         n_feasible=int(feasible.sum()),
         best_r_de=float(-F[:, 0].min()),
         best_t_mission_min=float(F[:, 1].min()),
         best_e_total_wh=float(F[:, 2].min()),
         hypervolume=tracker(F),
+        evaluations=evaluations,
+        elapsed_s=elapsed_s,
+        n_front=int((rank == 0).sum()),
+        mean_r_de=float(-F[:, 0].mean()),
+        mean_t_mission_min=float(F[:, 1].mean()),
+        mean_e_total_wh=float(F[:, 2].mean()),
     )

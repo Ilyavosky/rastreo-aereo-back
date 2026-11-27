@@ -14,7 +14,7 @@ from app.domain.simulator import Evaluator
 from app.domain.solution import describe_solution
 from app.domain.solve import GenerationStats, optimize
 from app.infrastructure.db import SessionLocal
-from app.infrastructure.models import Generation, Run, Solution
+from app.infrastructure.models import Generation, Maneuver, Run, Solution
 
 SEARCH_PROGRESS_SHARE = 0.9
 
@@ -62,6 +62,12 @@ def _execute(session: Session, run: Run) -> None:
                 best_t_mission_min=stats.best_t_mission_min,
                 best_e_total_wh=stats.best_e_total_wh,
                 hypervolume=stats.hypervolume,
+                evaluations=stats.evaluations,
+                elapsed_s=stats.elapsed_s,
+                n_front=stats.n_front,
+                mean_r_de=stats.mean_r_de,
+                mean_t_mission_min=stats.mean_t_mission_min,
+                mean_e_total_wh=stats.mean_e_total_wh,
             )
         )
         run.progress = SEARCH_PROGRESS_SHARE * stats.gen / params.generations
@@ -86,6 +92,7 @@ def _execute(session: Session, run: Run) -> None:
 
 def _solution(run_id: int, profile: str, evaluator: Evaluator, x) -> Solution:
     metrics, route = describe_solution(evaluator, x)
+    maneuvers = [Maneuver(**leg) for report in metrics.drones for leg in report.legs]
     return Solution(
         run_id=run_id,
         profile=profile,
@@ -98,6 +105,7 @@ def _solution(run_id: int, profile: str, evaluator: Evaluator, x) -> Solution:
         area_detected_pct=metrics.area_detected_pct,
         chromosome=[float(v) for v in x],
         route=route,
+        maneuvers=maneuvers,
     )
 
 
