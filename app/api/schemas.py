@@ -2,13 +2,19 @@ import math
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from app.config import settings
+from app.domain.capacity import displacement_range_m
+from app.domain.types import DroneSpec, fov_from_optics
 
 
 class DroneCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+    manufacturer: str = Field(min_length=1, max_length=60)
+    model: str = Field(min_length=1, max_length=80)
+    size_class: Literal["small", "medium", "large"]
+    mass_kg: float = Field(gt=0)
     battery_wh: float = Field(gt=0)
     v_min: float = Field(gt=0)
     v_max: float = Field(gt=0)
@@ -18,6 +24,9 @@ class DroneCreate(BaseModel):
     p_base_w: float = Field(gt=0)
     c_drag: float = Field(ge=0)
     c_altitude_j_m: float = Field(ge=0)
+    a_max_ms2: float = Field(gt=0)
+    accel_efficiency: float = Field(gt=0, le=1)
+    datasheet_url: str | None = None
     active: bool = True
 
     @model_validator(mode="after")
@@ -34,11 +43,27 @@ class DroneRead(DroneCreate):
 
     id: int
 
+    def _capacity(self) -> tuple[float, float]:
+        computed = {"displacement_range_km", "best_range_speed_ms"}
+        spec = DroneSpec.from_dict(self.model_dump(exclude=computed))
+        return displacement_range_m(spec, settings.battery_reserve)
+
+    @computed_field
+    @property
+    def displacement_range_km(self) -> float:
+        return self._capacity()[0] / 1000.0
+
+    @computed_field
+    @property
+    def best_range_speed_ms(self) -> float:
+        return self._capacity()[1]
+
 
 class CameraCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     modality: Literal["optical", "thermal"]
-    fov_deg: float = Field(gt=0, lt=180)
+    focal_length_mm: float = Field(gt=0)
+    sensor_width_mm: float = Field(gt=0)
     n_px_width: int = Field(ge=1)
     power_w: float = Field(ge=0)
     battery_wh: float = Field(gt=0)
@@ -51,10 +76,19 @@ class CameraRead(CameraCreate):
 
     id: int
 
+    @computed_field
+    @property
+    def fov_deg(self) -> float:
+        return fov_from_optics(self.focal_length_mm, self.sensor_width_mm)
+
 
 class PersonCreate(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     posture: Literal["standing", "sitting", "lying"]
+    age_group: Literal["child", "teen", "adult", "senior"]
+    build: Literal["slim", "average", "heavy"]
+    height_m: float = Field(gt=0)
+    body_width_m: float = Field(gt=0)
     critical_dim_m: float = Field(gt=0)
     px_min_optical: int = Field(ge=1)
     px_min_thermal: int = Field(ge=1)
@@ -206,6 +240,12 @@ class GenerationRead(BaseModel):
     best_t_mission_min: float | None
     best_e_total_wh: float | None
     hypervolume: float | None
+    evaluations: int | None = None
+    elapsed_s: float | None = None
+    n_front: int | None = None
+    mean_r_de: float | None = None
+    mean_t_mission_min: float | None = None
+    mean_e_total_wh: float | None = None
 
 
 class RunDetail(RunSummary):
@@ -231,6 +271,39 @@ class SolutionSummary(BaseModel):
 class SolutionDetail(SolutionSummary):
     chromosome: list[float]
     route: dict
+
+
+class ManeuverRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    drone_index: int
+    seq: int
+    drone_id: int
+    kind: Literal["outbound", "search", "return"]
+    x0: float
+    y0: float
+    h0: float
+    x1: float
+    y1: float
+    h1: float
+    distance_m: float
+    altitude_change_m: float
+    speed_start_ms: float
+    speed_cruise_ms: float
+    speed_end_ms: float
+    accel_ms2: float
+    t_start_s: float
+    t_end_s: float
+    t_accel_s: float
+    t_cruise_s: float
+    t_brake_s: float
+    t_vertical_s: float
+    energy_base_wh: float
+    energy_drag_wh: float
+    energy_climb_wh: float
+    energy_accel_wh: float
+    battery_remaining_pct: float
+    camera_energy_wh: float
 
 
 class ComparisonRow(BaseModel):

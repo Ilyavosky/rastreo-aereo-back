@@ -4,7 +4,7 @@ from tests.payloads import CAMERA, DRONE, PERSON
 
 CASES = {
     "drones": (DRONE, {**DRONE, "v_min": 12, "v_max": 3}, ("battery_wh", 120)),
-    "cameras": (CAMERA, {**CAMERA, "modality": "infrared"}, ("fov_deg", 90)),
+    "cameras": (CAMERA, {**CAMERA, "modality": "infrared"}, ("focal_length_mm", 4.0)),
     "persons": (PERSON, {**PERSON, "critical_dim_m": 0}, ("px_min_optical", 25)),
 }
 
