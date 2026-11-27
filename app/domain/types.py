@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, fields
 from typing import Any
 
@@ -5,6 +6,10 @@ from typing import Any
 def _pick(cls, data: dict[str, Any]):
     names = {f.name for f in fields(cls)}
     return cls(**{key: value for key, value in data.items() if key in names})
+
+
+def fov_from_optics(focal_length_mm: float, sensor_width_mm: float) -> float:
+    return math.degrees(2.0 * math.atan(sensor_width_mm / (2.0 * focal_length_mm)))
 
 
 @dataclass(frozen=True)
@@ -20,6 +25,9 @@ class DroneSpec:
     p_base_w: float
     c_drag: float
     c_altitude_j_m: float
+    mass_kg: float
+    a_max_ms2: float
+    accel_efficiency: float
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DroneSpec":
@@ -31,7 +39,8 @@ class CameraSpec:
     id: int
     name: str
     modality: str
-    fov_deg: float
+    focal_length_mm: float
+    sensor_width_mm: float
     n_px_width: int
     power_w: float
     battery_wh: float
@@ -40,6 +49,10 @@ class CameraSpec:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "CameraSpec":
         return _pick(cls, data)
+
+    @property
+    def fov_deg(self) -> float:
+        return fov_from_optics(self.focal_length_mm, self.sensor_width_mm)
 
 
 @dataclass(frozen=True)
