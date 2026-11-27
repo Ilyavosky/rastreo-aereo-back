@@ -1,12 +1,19 @@
+import json
+import time
+from collections.abc import Callable, Iterator
 from typing import Annotated, Literal
 
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.api.crud import SessionDep
 from app.api.schemas import (
     ComparisonRow,
     GenerationRead,
+    ManeuverRead,
     ResultsRead,
     RunCreate,
     RunDetail,
@@ -17,8 +24,12 @@ from app.api.schemas import (
     TrajectoryScenario,
 )
 from app.application import runs_service
+from app.config import settings
+from app.domain.explain import explain_solution
+from app.domain.simulator import Evaluator
+from app.infrastructure.db import SessionLocal
 from app.infrastructure.executor import Dispatcher
-from app.infrastructure.models import Generation, Run, Solution
+from app.infrastructure.models import Generation, Maneuver, Run, Solution
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -182,4 +193,78 @@ def get_trajectories(run_id: int, session: SessionDep, profile: ProfileName = "b
     )
     return TrajectoriesRead(
         profile=profile, scenario=scenario, solution=SolutionDetail.model_validate(solution)
+    )
+
+
+def _fetch_solution(session, run_id: int, solution_id: int) -> Solution:
+    _fetch(session, run_id)
+    solution = session.scalar(
+        select(Solution).where(Solution.id == solution_id, Solution.run_id == run_id)
+    )
+    if solution is None:
+        raise HTTPException(status_code=404, detail="Solución no encontrada")
+    return solution
+
+
+@router.get("/{run_id}/solutions/{solution_id}/maneuvers", response_model=list[ManeuverRead])
+def list_maneuvers(
+    run_id: int, solution_id: int, session: SessionDep, drone_index: int | None = None
+):
+    _fetch_solution(session, run_id, solution_id)
+    statement = select(Maneuver).where(Maneuver.solution_id == solution_id)
+    if drone_index is not None:
+        statement = statement.where(Maneuver.drone_index == drone_index)
+    return session.scalars(statement.order_by(Maneuver.drone_index, Maneuver.seq)).all()
+
+
+@router.get("/{run_id}/solutions/{solution_id}/calculation")
+def get_calculation(run_id: int, solution_id: int, session: SessionDep) -> dict:
+    solution = _fetch_solution(session, run_id, solution_id)
+    run = _fetch(session, run_id)
+    terrain, drones, cameras, person, params = runs_service.load_inputs(run)
+    evaluator = Evaluator(terrain, drones, cameras, person, params)
+    return explain_solution(evaluator, np.array(solution.chromosome))
+
+
+def _sse(event: str, data: str) -> str:
+    return f"event: {event}\ndata: {data}\n\n"
+
+
+def _events(run_id: int, session_factory: Callable[[], Session]) -> Iterator[str]:
+    last_gen = 0
+    last_state: tuple[str, float] | None = None
+    while True:
+        with session_factory() as session:
+            run = session.get(Run, run_id)
+            if run is None:
+                yield _sse("error", json.dumps({"detail": "Corrida no encontrada"}))
+                return
+            generations = session.scalars(
+                select(Generation)
+                .where(Generation.run_id == run_id, Generation.gen > last_gen)
+                .order_by(Generation.gen)
+            ).all()
+            for generation in generations:
+                last_gen = generation.gen
+                yield _sse(
+                    "generation", GenerationRead.model_validate(generation).model_dump_json()
+                )
+            state = (run.status, run.progress)
+            if state != last_state:
+                last_state = state
+                yield _sse("status", json.dumps({"status": state[0], "progress": state[1]}))
+            if run.status not in runs_service.ACTIVE_STATUSES and not generations:
+                yield _sse("done", json.dumps({"status": run.status, "error": run.error}))
+                return
+        time.sleep(settings.stream_poll_s)
+
+
+@router.get("/{run_id}/stream")
+def stream_run(run_id: int, request: Request, session: SessionDep):
+    _fetch(session, run_id)
+    factory = getattr(request.app.state, "session_factory", SessionLocal)
+    return StreamingResponse(
+        _events(run_id, factory),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
