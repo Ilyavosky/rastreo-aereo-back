@@ -14,7 +14,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.db import Base
 
@@ -26,6 +26,10 @@ class Drone(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
+    manufacturer: Mapped[str] = mapped_column(String(60))
+    model: Mapped[str] = mapped_column(String(80))
+    size_class: Mapped[str] = mapped_column(String(8))
+    mass_kg: Mapped[float]
     battery_wh: Mapped[float]
     v_min: Mapped[float]
     v_max: Mapped[float]
@@ -35,6 +39,9 @@ class Drone(Base):
     p_base_w: Mapped[float]
     c_drag: Mapped[float]
     c_altitude_j_m: Mapped[float]
+    a_max_ms2: Mapped[float]
+    accel_efficiency: Mapped[float]
+    datasheet_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -44,7 +51,8 @@ class Camera(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
     modality: Mapped[str] = mapped_column(String(16))
-    fov_deg: Mapped[float]
+    focal_length_mm: Mapped[float]
+    sensor_width_mm: Mapped[float]
     n_px_width: Mapped[int] = mapped_column(Integer)
     power_w: Mapped[float]
     battery_wh: Mapped[float]
@@ -58,6 +66,10 @@ class Person(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(80), unique=True)
     posture: Mapped[str] = mapped_column(String(16))
+    age_group: Mapped[str] = mapped_column(String(8))
+    build: Mapped[str] = mapped_column(String(8))
+    height_m: Mapped[float]
+    body_width_m: Mapped[float]
     critical_dim_m: Mapped[float]
     px_min_optical: Mapped[int] = mapped_column(Integer)
     px_min_thermal: Mapped[int] = mapped_column(Integer)
@@ -112,6 +124,12 @@ class Generation(Base):
     best_t_mission_min: Mapped[float | None] = mapped_column(Float, nullable=True)
     best_e_total_wh: Mapped[float | None] = mapped_column(Float, nullable=True)
     hypervolume: Mapped[float | None] = mapped_column(Float, nullable=True)
+    evaluations: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    elapsed_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    n_front: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mean_r_de: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mean_t_mission_min: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mean_e_total_wh: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class Solution(Base):
@@ -133,3 +151,44 @@ class Solution(Base):
     area_detected_pct: Mapped[float] = mapped_column(Float)
     chromosome: Mapped[list] = mapped_column(JsonType)
     route: Mapped[dict] = mapped_column(JsonType)
+    maneuvers: Mapped[list["Maneuver"]] = relationship(
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="Maneuver.drone_index, Maneuver.seq",
+    )
+
+
+class Maneuver(Base):
+    __tablename__ = "maneuvers"
+
+    solution_id: Mapped[int] = mapped_column(
+        ForeignKey("solutions.id", ondelete="CASCADE"), primary_key=True
+    )
+    drone_index: Mapped[int] = mapped_column(Integer, primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, primary_key=True)
+    drone_id: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(16))
+    x0: Mapped[float]
+    y0: Mapped[float]
+    h0: Mapped[float]
+    x1: Mapped[float]
+    y1: Mapped[float]
+    h1: Mapped[float]
+    distance_m: Mapped[float]
+    altitude_change_m: Mapped[float]
+    speed_start_ms: Mapped[float]
+    speed_cruise_ms: Mapped[float]
+    speed_end_ms: Mapped[float]
+    accel_ms2: Mapped[float]
+    t_start_s: Mapped[float]
+    t_end_s: Mapped[float]
+    t_accel_s: Mapped[float]
+    t_cruise_s: Mapped[float]
+    t_brake_s: Mapped[float]
+    t_vertical_s: Mapped[float]
+    energy_base_wh: Mapped[float]
+    energy_drag_wh: Mapped[float]
+    energy_climb_wh: Mapped[float]
+    energy_accel_wh: Mapped[float]
+    battery_remaining_pct: Mapped[float]
+    camera_energy_wh: Mapped[float]
